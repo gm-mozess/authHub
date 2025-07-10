@@ -7,34 +7,39 @@ import (
 	"os"
 
 	"authHub/internal/app"
-
+	"authHub/pkg"
 )
-
-
 
 func main() {
 
+	//here we set a default port, he can be modified with : go run . -addr=":port"
 	addr := flag.String("addr", ":4000", "HTTP network address")
+	dns := flag.String("dns", "net:code@/authHub?parseTime=true", "MySQL data source name")
 	flag.Parse()
 
-	infoLog:=log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
-	errLog:= log.New(os.Stdout, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
+	infoLog := log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
+	errLog := log.New(os.Stderr, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
 
-	mainApp:= &app.Application{
+	db, err := pkg.OpenDB(*dns)
+	if err != nil {
+		errLog.Fatal(err)
+	}
+
+	defer db.Close()
+
+	mainApp := &app.Application{
 		ErrorLog: errLog,
-		InfoLog: infoLog,
+		InfoLog:  infoLog,
 	}
 
 	srv := http.Server{
-		Addr: *addr,
+		Addr:     *addr,
 		ErrorLog: errLog,
-		Handler: mainApp.Routes(),
+		Handler:  mainApp.Routes(),
 	}
 
-
 	infoLog.Printf("Starting server on %s", *addr)
-	err := srv.ListenAndServe()
-
+	err = srv.ListenAndServe()
 	errLog.Fatal(err)
 
 }
