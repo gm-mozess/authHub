@@ -311,5 +311,3 @@ Créer un service d'authentification robuste et réutilisable pour tous vos autr
   _Exemple : PDF ou `security_report.md` listant tous les résultats du test._
 
 ---
-
-Souhaites-tu que je regroupe tout ceci dans un fichier `.md` téléchargeable avec formatage complet ? Ou que je te l'intègre dans un template GitHub ?
