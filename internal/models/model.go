@@ -3,22 +3,20 @@ package models
 import (
 	"database/sql"
 	"errors"
-
-	"github.com/google/uuid"
 )
 
 type User struct {
-	Id        uuid.UUID
-	FirstName string
-	LastName  string
-	Username  string
-	Email     string
-	Password  string
+	Id        string
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Username  string `json:"userName"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
 }
 
 type Login struct {
-	Email    string
-	Password string
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 type AuthHub struct {
@@ -26,7 +24,6 @@ type AuthHub struct {
 }
 
 var ErrNoRecord = errors.New("no matching record found")
-
 
 // from this function you will be able to get id too
 func (m *AuthHub) GetUser(username string) (*User, error) {
@@ -45,11 +42,11 @@ func (m *AuthHub) GetUser(username string) (*User, error) {
 func (m *AuthHub) InsertUser(user User) error {
 	stmt := `INSERT INTO User(Id, FirstName, LastName, Username, Email, Password)
 	VALUES(?, ?, ?, ?, ?, ?)`
-	_, err := m.DB.Exec(stmt, user.Id, user.FirstName, user.FirstName, user.LastName,
-	user.Username, user.Email, user.Password)
+	_, err := m.DB.Exec(stmt, user.Id, user.FirstName, user.LastName,
+		user.Username, user.Email, user.Password)
 
 	if err != nil {
-
+		return err
 	}
 	return nil
 }

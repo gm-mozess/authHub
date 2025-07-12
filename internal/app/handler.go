@@ -1,10 +1,11 @@
 package app
 
 import (
+	"authHub/internal/models"
+	"authHub/pkg"
+	"encoding/json"
 	"log"
 	"net/http"
-	"authHub/internal/models"
-
 )
 
 type Application struct {
@@ -31,7 +32,23 @@ func (app *Application) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	
+	var data models.User
+	err := json.NewDecoder(r.Body).Decode(&data)
+	data.Id = pkg.GenerateUUID()
+	if err != nil {
+		app.ClientError(w, http.StatusBadRequest)
+		return
+	}
+
+	hash, err := pkg.HashPassword(data.Password)
+	if err != nil {
+		app.ClientError(w, http.StatusBadRequest)
+	}
+	data.Password = hash
+	err = app.AppDB.InsertUser(data)
+	if err != nil {
+		app.ServerError(w, err)
+	}
 }
 
 func (app *Application) Login(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +56,23 @@ func (app *Application) Login(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", http.MethodPost)
 		w.Header().Set("Content-Type", "application/json")
 		app.ClientError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var data models.Login
+	err := json.NewDecoder(r.Body).Decode(&data)
+	if err != nil {
+		app.ClientError(w, http.StatusBadRequest)
+		return
+	}
+	user, err := app.AppDB.GetUser(data.Email)
+	if err != nil {
+		app.ServerError(w, err)
+	}
+
+	authenticated := pkg.Authenticate(data.Password, user.Password)
+	if !authenticated {
+		app.ClientError(w, http.StatusForbidden)
 		return
 	}
 }

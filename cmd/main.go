@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"authHub/internal/app"
+	"authHub/internal/models"
 	"authHub/pkg"
 )
 
@@ -30,6 +31,8 @@ func main() {
 	mainApp := &app.Application{
 		ErrorLog: errLog,
 		InfoLog:  infoLog,
+		AppDB:  &models.AuthHub{DB: db},
+		
 	}
 
 	srv := http.Server{
