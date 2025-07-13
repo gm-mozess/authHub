@@ -21,7 +21,7 @@ func OpenDB(dns string) (*sql.DB, error) {
 	return db, nil
 }
 
-func GenerateUUID() string{
+func GenerateUUID() string {
 	var id = uuid.New()
 	return uuid.UUID.String(id)
 }
@@ -41,5 +41,5 @@ func HashPassword(pass string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(hash) , nil	
+	return string(hash), nil
 }

@@ -14,14 +14,15 @@ type Application struct {
 	AppDB    *models.AuthHub
 }
 
-func (app Application) Routes() *http.ServeMux {
+func (app Application) Routes() http.Handler {
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", app.Home)
 	mux.HandleFunc("/register", app.Register)
 	mux.HandleFunc("/login", app.Login)
-	return mux
+
+	return app.LogRequest(SecureHeaders(mux))
 }
 
 func (app *Application) Register(w http.ResponseWriter, r *http.Request) {
@@ -83,3 +84,5 @@ func (app *Application) Home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+
