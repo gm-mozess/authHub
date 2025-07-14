@@ -6,7 +6,7 @@
 ---
 
 ## 🔐 Core Authentication
-- [✅] Inscription/Connexion classique (email + password)
+- ✅  Inscription/Connexion classique (email + password)
 - [ ] Validation email avec tokens temporaires
 - [ ] Reset password avec liens sécurisés
 - [ ] JWT tokens (access + refresh) avec rotation
@@ -29,7 +29,7 @@
 - [ ] Device tracking et notifications nouvelles connexions
 - [ ] Password policies configurables
 - [ ] Brute force protection avec backoff exponentiel
-- [ ] CSRF protection et headers sécurisés
+- ✅  CSRF protection et headers sécurisés
 
 ---
 
