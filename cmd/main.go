@@ -5,44 +5,62 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
-	"authHub/internal/app"
-	"authHub/internal/models"
-	"authHub/pkg"
+	"github.com/gm-mozess/authHub/db"
+	"github.com/gm-mozess/authHub/internal/auth"
+	"github.com/gm-mozess/authHub/internal/handlers"
+	"github.com/gm-mozess/authHub/internal/models"
+	"github.com/joho/godotenv"
 )
 
-func main() {
+var InfoLog = log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
+var ErrorLog = log.New(os.Stderr, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
 
-	//here we set a default port, he can be modified with : go run . -addr=":port"
+func loadEnv() {
+	// Load .env file if it exists
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using environment variables")
+	}
+	// Check required variables
+	requiredVars := []string{"JWT_SECRET"}
+	for _, v := range requiredVars {
+		if os.Getenv(v) == "" {
+			log.Fatalf("Required environment variable %s is not set", v)
+		}
+	}
+}
+
+func main() {
+    // 	//here we set a default port, he can be modified with : go run . -addr=":port"
 	addr := flag.String("addr", ":4000", "HTTP network address")
 	dns := flag.String("dns", "net:code@/authHub?parseTime=true", "MySQL data source name")
 	flag.Parse()
 
-	infoLog := log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
-	errLog := log.New(os.Stderr, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
+	// Load environment variables
+	loadEnv()
 
-	db, err := pkg.OpenDB(*dns)
+	// Connect to the database
+	database, err := db.Connect(*dns)
 	if err != nil {
-		errLog.Fatal(err)
-	}
+		ErrorLog.Fatal(err)
+ 	}
 
-	defer db.Close()
-
-	mainApp := &app.Application{
-		ErrorLog: errLog,
-		InfoLog:  infoLog,
-		AppDB:  &models.AuthHub{DB: db},
-		
-	}
-
+	// Create repositories
+	userRepo := models.NewUserRepository(database)
+	refreshTokenRepo := models.NewRefreshTokenRepository(database)
+	// Create services
+	authService := auth.NewAuthService(userRepo, refreshTokenRepo, os.Getenv("JWT_SECRET"), 15*time.Minute)
+	// Create handlers
+	authHandler := handlers.NewAuthHandler(authService, ErrorLog, InfoLog)
 	srv := http.Server{
 		Addr:     *addr,
-		ErrorLog: errLog,
-		Handler:  mainApp.Routes(),
+		ErrorLog: ErrorLog,
+		Handler:  authHandler.Routes(authService, ErrorLog, InfoLog),
 	}
 
-	infoLog.Printf("Starting server on %s", *addr)
+	InfoLog.Printf("Starting server on %s", *addr)
 	err = srv.ListenAndServe()
-	errLog.Fatal(err)
-
+	ErrorLog.Fatal(err)
 }
+
