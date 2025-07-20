@@ -59,9 +59,20 @@ func (s *AuthService) Register(email, username, password string) (*models.User, 
 	if err != nil {
 		return nil, err
 	}
-
 	return user, nil
 }
+
+
+// func (s *AuthService) VerifyEmail(user *models.User) (string, error) {
+// 	// Generate an access token
+// 	token, err := s.generateAccessToken(user)
+// 	if err != nil {
+// 		return "", err
+// 	} 
+// }
+
+
+
 
 // Login authenticates a user and returns an access token
 func (s *AuthService) Login(email, password string) (string, error) {
@@ -197,3 +208,4 @@ func (s *AuthService) RefreshAccessToken(refreshTokenString string) (string, err
 
     return accessToken, nil
 }
+

@@ -33,6 +33,7 @@ func (h *AuthHandler) Routes(authService *auth.AuthService, ErrorLog, InfoLog *l
 	// Public routes
 	mux.HandleFunc("/api/auth/register", h.Register)
 	mux.HandleFunc("/api/auth/login", h.Login)
+	//mux.HandleFunc("/api/auth/verify-email/send", h.VerifyEmail)
 	//mux.HandleFunc("/api/auth/refresh", h.RefreshToken)
 
 	// userHandler := handlers.NewUserHandler(userRepo, errorLog, infoLog)
@@ -97,14 +98,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// if you want to signal a simple bad request
-	// if req.Email == "" || req.Username == "" || req.Password == "" {
-	// 	h.ClientError(w, http.StatusBadRequest)
-	// 	return
-	// }
-
 	// Call the auth service to register the user
-	user, err := h.authService.Register(req.Email, req.Username, req.Password)
+	_, err := h.authService.Register(req.Email, req.Username, req.Password)
 	if err != nil {
 		if errors.Is(err, auth.ErrEmailInUse) {
 			req.Validator.AddFieldError("email", auth.ErrEmailInUse.Error())
@@ -122,17 +117,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
-	// Return the created user (without sensitive data)
-	response := RegisterResponse{
-		//ID:       user.ID.String(),
-		Email:    user.Email,
-		Username: user.Username,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
 }
 
 // LoginRequest represents the login payload
@@ -198,6 +183,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
 
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`

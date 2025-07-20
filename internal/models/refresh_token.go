@@ -33,7 +33,6 @@ func (r *RefreshTokenRepository) CreateRefreshToken(userID uuid.UUID, ttl time.D
     // Generate a unique token identifier
     tokenID := uuid.New()
     expiresAt := time.Now().Add(ttl)
-
     token := &RefreshToken{
         ID:        tokenID,
         UserID:    userID,
@@ -51,7 +50,6 @@ func (r *RefreshTokenRepository) CreateRefreshToken(userID uuid.UUID, ttl time.D
     if err != nil {
         return nil, err
     }
-
     return token, nil
 }
 
