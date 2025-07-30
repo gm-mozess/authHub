@@ -23,7 +23,7 @@ func loadEnv() {
 		log.Println("No .env file found, using environment variables")
 	}
 	// Check required variables
-	requiredVars := []string{"JWT_SECRET"}
+	requiredVars := []string{"JWT_SECRET", "EMAIL_ADDRESS", "PASSWORD", "SMTP_HOST", "PORT"}
 	for _, v := range requiredVars {
 		if os.Getenv(v) == "" {
 			log.Fatalf("Required environment variable %s is not set", v)

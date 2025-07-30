@@ -6,10 +6,18 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"runtime/debug"
 
 	"github.com/gm-mozess/authHub/internal/auth"
 	"github.com/gm-mozess/authHub/internal/middleware"
+	"github.com/gm-mozess/authHub/internal/models"
+)
+
+var (
+	PORT = os.Getenv("PORT")
+	HOSTNAME = os.Getenv("HOST_NAME")
+
 )
 
 // AuthHandler contains HTTP handlers for authentication
@@ -56,8 +64,8 @@ type RegisterRequest struct {
 
 // RegisterResponse contains the user data after successful registration
 type RegisterResponse struct {
-	Email    string `json:"email"`
-	Username string `json:"username"`
+	Email        string            `json:"email"`
+	Username     string            `json:"username"`
 	FieldsErrors map[string]string `json:"fieldErrors"`
 }
 
@@ -77,7 +85,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	req.Validator.CheckField(auth.NotBlank(req.Username), "userName", "this field cannot be blank")
 	req.Validator.CheckField(auth.NotBlank(req.Email), "email", "this field cannot be blank")
-	req.Validator.CheckField(auth.Matches(req.Email, auth.EmailRX), "email", "This field must be a valid email address")
+	req.Validator.CheckField(auth.Matches(req.Email), "email", "This field must be a valid email address")
 	req.Validator.CheckField(auth.NotBlank(req.Password), "password", "this field cannot be blank")
 
 	req.Validator.CheckField(auth.MaxChars(req.Username, 30), "userName", "this field cannot be more than 30 characters long")
@@ -88,8 +96,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if !req.Validator.Valid() {
 		response := RegisterResponse{
-			Email:    req.Email,
-			Username: req.Username,
+			Email:        req.Email,
+			Username:     req.Username,
 			FieldsErrors: req.FieldErrors,
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -99,25 +107,45 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Call the auth service to register the user
-	_, err := h.authService.Register(req.Email, req.Username, req.Password)
+	user, err := h.authService.Register(req.Email, req.Username, req.Password)
 	if err != nil {
 		if errors.Is(err, auth.ErrEmailInUse) {
 			req.Validator.AddFieldError("email", auth.ErrEmailInUse.Error())
 			response := RegisterResponse{
 				//ID:       user.ID.String(),
-				Email:    req.Email,
-				Username: req.Username,
+				Email:        req.Email,
+				Username:     req.Username,
 				FieldsErrors: req.FieldErrors,
 			}
 			w.Header().Set("Content-Type", "application/json")
 			h.ClientError(w, http.StatusConflict)
 			json.NewEncoder(w).Encode(response)
-		}else{
+		} else {
 			h.ServerError(w, err)
 		}
 		return
 	}
+
+	emailToken, err := h.authService.GenerateAccessToken(user)
+	if err != nil {
+		h.ServerError(w, err)
+		return 
+	}
+	link := "http://localhost:4000" + "?" + "token=" + emailToken
+	listMails := []string{user.Email}
+	mail := models.NewMail(link, listMails)
+	err = mail.SendEmail()
+	if err != nil {
+		h.ServerError(w, err)
+		return
+	}
+
 	w.WriteHeader(http.StatusCreated)
+
+}
+
+func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+
 }
 
 // LoginRequest represents the login payload
@@ -129,7 +157,7 @@ type LoginRequest struct {
 
 // LoginResponse contains the JWT token after successful login
 type LoginResponse struct {
-	Token string `json:"token"`
+	Token     string `json:"token"`
 	Validator auth.Validator
 }
 
@@ -151,7 +179,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Validator.CheckField(auth.NotBlank(req.Email), "email", "this field cannot be blank")
-	req.Validator.CheckField(auth.Matches(req.Email, auth.EmailRX), "email", "This field must be a valid email address")
+	req.Validator.CheckField(auth.Matches(req.Email), "email", "This field must be a valid email address")
 	req.Validator.CheckField(auth.NotBlank(req.Password), "password", "this field cannot be blank")
 
 	if !req.Validator.Valid() {
@@ -175,7 +203,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		} else {
 			h.ServerError(w, err)
 		}
-		return 
+		return
 	}
 
 	// Return the token
@@ -183,7 +211,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
-
 
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`

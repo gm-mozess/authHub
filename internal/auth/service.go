@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gm-mozess/authHub/internal/models"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 var (
@@ -62,17 +62,13 @@ func (s *AuthService) Register(email, username, password string) (*models.User, 
 	return user, nil
 }
 
-
 // func (s *AuthService) VerifyEmail(user *models.User) (string, error) {
 // 	// Generate an access token
 // 	token, err := s.generateAccessToken(user)
 // 	if err != nil {
 // 		return "", err
-// 	} 
+// 	}
 // }
-
-
-
 
 // Login authenticates a user and returns an access token
 func (s *AuthService) Login(email, password string) (string, error) {
@@ -88,7 +84,7 @@ func (s *AuthService) Login(email, password string) (string, error) {
 	}
 
 	// Generate an access token
-	token, err := s.generateAccessToken(user)
+	token, err := s.GenerateAccessToken(user)
 	if err != nil {
 		return "", err
 	}
@@ -97,7 +93,7 @@ func (s *AuthService) Login(email, password string) (string, error) {
 }
 
 // generateAccessToken creates a new JWT access token
-func (s *AuthService) generateAccessToken(user *models.User) (string, error) {
+func (s *AuthService) GenerateAccessToken(user *models.User) (string, error) {
 	// Set the expiration time
 	expirationTime := time.Now().Add(s.accessTokenTTL)
 
@@ -150,62 +146,62 @@ func (s *AuthService) ValidateToken(tokenString string) (jwt.MapClaims, error) {
 
 // LoginWithRefresh authenticates a user and returns both access and refresh tokens
 func (s *AuthService) LoginWithRefresh(email, password string, refreshTokenTTL time.Duration) (accessToken string, refreshToken string, err error) {
-    // Get the user from the database
-    user, err := s.userRepo.GetUserByEmail(email)
-    if err != nil {
-        return "", "", ErrInvalidCredentials
-    }
+	// Get the user from the database
+	user, err := s.userRepo.GetUserByEmail(email)
+	if err != nil {
+		return "", "", ErrInvalidCredentials
+	}
 
-    // Verify the password
-    if err := VerifyPassword(user.PasswordHash, password); err != nil {
-        return "", "", ErrInvalidCredentials
-    }
+	// Verify the password
+	if err := VerifyPassword(user.PasswordHash, password); err != nil {
+		return "", "", ErrInvalidCredentials
+	}
 
-    // Generate an access token
-    accessToken, err = s.generateAccessToken(user)
-    if err != nil {
-        return "", "", err
-    }
+	// Generate an access token
+	accessToken, err = s.GenerateAccessToken(user)
+	if err != nil {
+		return "", "", err
+	}
 
-    // Create a refresh token
-    token, err := s.refreshTokenRepo.CreateRefreshToken(user.ID, refreshTokenTTL)
-    if err != nil {
-        return "", "", err
-    }
+	// Create a refresh token
+	token, err := s.refreshTokenRepo.CreateRefreshToken(user.ID, refreshTokenTTL)
+	if err != nil {
+		return "", "", err
+	}
 
-    return accessToken, token.Token, nil
+	return accessToken, token.Token, nil
 }
 
 // RefreshAccessToken creates a new access token using a refresh token
 func (s *AuthService) RefreshAccessToken(refreshTokenString string) (string, error) {
-    // Retrieve the refresh token
-    token, err := s.refreshTokenRepo.GetRefreshToken(refreshTokenString)
-    if err != nil {
-        return "", ErrInvalidToken
-    }
+	// Retrieve the refresh token
+	token, err := s.refreshTokenRepo.GetRefreshToken(refreshTokenString)
+	if err != nil {
+		return "", ErrInvalidToken
+	}
 
-    // Check if the token is valid
-    if token.Revoked {
-        return "", ErrInvalidToken
-    }
+	// Check if the token is valid
+	if token.Revoked {
+		return "", ErrInvalidToken
+	}
 
-    // Check if the token has expired
-    if time.Now().After(token.ExpiresAt) {
-        return "", ErrExpiredToken
-    }
+	// Check if the token has expired
+	if time.Now().After(token.ExpiresAt) {
+		return "", ErrExpiredToken
+	}
 
-    // Get the user
-    user, err := s.userRepo.GetUserByID(token.UserID)
-    if err != nil {
-        return "", err
-    }
+	// Get the user
+	user, err := s.userRepo.GetUserByID(token.UserID)
+	if err != nil {
+		return "", err
+	}
 
-    // Generate a new access token
-    accessToken, err := s.generateAccessToken(user)
-    if err != nil {
-        return "", err
-    }
+	// Generate a new access token
+	accessToken, err := s.GenerateAccessToken(user)
+	if err != nil {
+		return "", err
+	}
 
-    return accessToken, nil
+	return accessToken, nil
 }
 
