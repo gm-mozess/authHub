@@ -23,7 +23,7 @@ func loadEnv() {
 		log.Println("No .env file found, using environment variables")
 	}
 	// Check required variables
-	requiredVars := []string{"JWT_SECRET", "EMAIL_ADDRESS", "PASSWORD", "SMTP_HOST", "PORT"}
+	requiredVars := []string{"JWT_SECRET", "EMAIL_ADDRESS", "PASSWORD", "SMTP_HOST", "API", "PORT"}
 	for _, v := range requiredVars {
 		if os.Getenv(v) == "" {
 			log.Fatalf("Required environment variable %s is not set", v)
@@ -49,8 +49,9 @@ func main() {
 	// Create repositories
 	userRepo := models.NewUserRepository(database)
 	refreshTokenRepo := models.NewRefreshTokenRepository(database)
+	registTokenRepo := models.NewRegistTokenRepository(database)
 	// Create services
-	authService := auth.NewAuthService(userRepo, refreshTokenRepo, os.Getenv("JWT_SECRET"), 15*time.Minute)
+	authService := auth.NewAuthService(userRepo, refreshTokenRepo, &registTokenRepo, os.Getenv("JWT_SECRET"), 15*time.Minute)
 	// Create handlers
 	authHandler := handlers.NewAuthHandler(authService, ErrorLog, InfoLog)
 	srv := http.Server{

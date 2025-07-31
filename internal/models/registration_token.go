@@ -10,6 +10,7 @@ import (
 type RegistToken struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID
+	Token 	  string
 	ExpiresAt time.Time
 	Revoked   bool
 }
@@ -25,18 +26,21 @@ func NewRegistTokenRepository(db *sql.DB) RegistTokenRepository {
 
 func (r *RegistTokenRepository) CreateRegistToken(userId uuid.UUID, ttl time.Duration) (*RegistToken, error) {
 	expiresAt := time.Now().Add(ttl)
+	tokenID := uuid.New()
+
 	token := &RegistToken{
 		ID : uuid.New(),
-		UserID:    userId,
+		UserID: userId,
+		Token: tokenID.String(),
 		ExpiresAt: expiresAt,
-		Revoked:   false,
+		Revoked: false,
 	}
 
 	query := `
-		 INSERT INTO refresh_tokens (id, user_id, expires_at, revoked)
-        VALUES (?, ?, ?, ?, ?, ?)
+		 INSERT INTO registration_token (id, user_id, token, expires_at, revoked)
+        VALUES (?, ?, ?, ?, ?)
 	`
-	_, err := r.db.Exec(query, userId, token.ExpiresAt, token.Revoked)
+	_, err := r.db.Exec(query, token.ID, token.UserID, token.Token, token.ExpiresAt, token.Revoked)
 	if err != nil {
 		return nil, err
 	}
@@ -52,6 +56,7 @@ func (r *RegistTokenRepository) GetRegistToken(tokenString string) (*RegistToken
 	err := r.db.QueryRow(query, tokenString).Scan(
 		&token.ID,
 		&token.UserID,
+		&token.Token,
 		&token.ExpiresAt,
 		&token.Revoked,
 	)

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"time"
 
 	"github.com/gm-mozess/authHub/internal/auth"
 	"github.com/gm-mozess/authHub/internal/middleware"
@@ -15,14 +16,13 @@ import (
 )
 
 var (
-	PORT = os.Getenv("PORT")
+	PORT     = os.Getenv("PORT")
 	HOSTNAME = os.Getenv("HOST_NAME")
-
 )
 
 // AuthHandler contains HTTP handlers for authentication
 type AuthHandler struct {
-	authService *auth.AuthService
+	AuthService *auth.AuthService
 	ErrorLog    *log.Logger
 	InfoLog     *log.Logger
 }
@@ -30,7 +30,7 @@ type AuthHandler struct {
 // NewAuthHandler creates a new auth handler
 func NewAuthHandler(authService *auth.AuthService, errorLog, infoLog *log.Logger) *AuthHandler {
 	return &AuthHandler{
-		authService: authService,
+		AuthService: authService,
 		ErrorLog:    errorLog,
 		InfoLog:     infoLog,
 	}
@@ -107,7 +107,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Call the auth service to register the user
-	user, err := h.authService.Register(req.Email, req.Username, req.Password)
+	user, err := h.AuthService.Register(req.Email, req.Username, req.Password)
 	if err != nil {
 		if errors.Is(err, auth.ErrEmailInUse) {
 			req.Validator.AddFieldError("email", auth.ErrEmailInUse.Error())
@@ -126,12 +126,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	emailToken, err := h.authService.GenerateAccessToken(user)
+	registToken, err := h.AuthService.RegistTokenRepo.CreateRegistToken(user.ID, 15*time.Minute)
 	if err != nil {
 		h.ServerError(w, err)
-		return 
+		return
 	}
-	link := "http://localhost:4000" + "?" + "token=" + emailToken
+	api := os.Getenv("API")
+	link := api + "?" + "token=" + registToken.Token
 	listMails := []string{user.Email}
 	mail := models.NewMail(link, listMails)
 	err = mail.SendEmail()
@@ -191,7 +192,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Attempt to login
-	token, err := h.authService.Login(req.Email, req.Password)
+	token, err := h.AuthService.Login(req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			req.Validator.AddNonFieldError(auth.ErrInvalidCredentials.Error())
@@ -231,7 +232,7 @@ func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Attempt to refresh the token
-	token, err := h.authService.RefreshAccessToken(req.RefreshToken)
+	token, err := h.AuthService.RefreshAccessToken(req.RefreshToken)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidToken) || errors.Is(err, auth.ErrExpiredToken) {
 			h.ClientError(w, http.StatusUnauthorized)

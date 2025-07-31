@@ -19,26 +19,29 @@ var (
 
 // AuthService provides authentication functionality
 type AuthService struct {
-	userRepo         *models.UserRepository
-	refreshTokenRepo *models.RefreshTokenRepository
-	jwtSecret        []byte
-	accessTokenTTL   time.Duration
+	UserRepo         *models.UserRepository
+	RefreshTokenRepo *models.RefreshTokenRepository
+	RegistTokenRepo  *models.RegistTokenRepository
+	JwtSecret        []byte
+	AccessTokenTTL   time.Duration
 }
 
 // NewAuthService creates a new authentication service
-func NewAuthService(userRepo *models.UserRepository, refreshTokenRepo *models.RefreshTokenRepository, jwtSecret string, accessTokenTTL time.Duration) *AuthService {
+func NewAuthService(userRepo *models.UserRepository, refreshTokenRepo *models.RefreshTokenRepository,
+					 registTokenRepo *models.RegistTokenRepository, jwtSecret string, accessTokenTTL time.Duration) *AuthService {
 	return &AuthService{
-		userRepo:         userRepo,
-		refreshTokenRepo: refreshTokenRepo,
-		jwtSecret:        []byte(jwtSecret),
-		accessTokenTTL:   accessTokenTTL,
+		UserRepo:         userRepo,
+		RefreshTokenRepo: refreshTokenRepo,
+		RegistTokenRepo: registTokenRepo,
+		JwtSecret:        []byte(jwtSecret),
+		AccessTokenTTL:   accessTokenTTL,
 	}
 }
 
 // Register creates a new user with the provided credentials
 func (s *AuthService) Register(email, username, password string) (*models.User, error) {
 	// Check if user already exists
-	_, err := s.userRepo.GetUserByEmail(email)
+	_, err := s.UserRepo.GetUserByEmail(email)
 	if err == nil {
 		return nil, ErrEmailInUse
 	}
@@ -55,7 +58,7 @@ func (s *AuthService) Register(email, username, password string) (*models.User, 
 	}
 
 	// Create the user
-	user, err := s.userRepo.CreateUser(email, username, hashedPassword)
+	user, err := s.UserRepo.CreateUser(email, username, hashedPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +76,7 @@ func (s *AuthService) Register(email, username, password string) (*models.User, 
 // Login authenticates a user and returns an access token
 func (s *AuthService) Login(email, password string) (string, error) {
 	// Get the user from the database
-	user, err := s.userRepo.GetUserByEmail(email)
+	user, err := s.UserRepo.GetUserByEmail(email)
 	if err != nil {
 		return "", ErrInvalidCredentials
 	}
@@ -95,7 +98,7 @@ func (s *AuthService) Login(email, password string) (string, error) {
 // generateAccessToken creates a new JWT access token
 func (s *AuthService) GenerateAccessToken(user *models.User) (string, error) {
 	// Set the expiration time
-	expirationTime := time.Now().Add(s.accessTokenTTL)
+	expirationTime := time.Now().Add(s.AccessTokenTTL)
 
 	// Create the JWT claims
 	claims := jwt.MapClaims{
@@ -110,7 +113,7 @@ func (s *AuthService) GenerateAccessToken(user *models.User) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	// Sign the token with our secret key
-	tokenString, err := token.SignedString(s.jwtSecret)
+	tokenString, err := token.SignedString(s.JwtSecret)
 	if err != nil {
 		return "", err
 	}
@@ -121,12 +124,12 @@ func (s *AuthService) GenerateAccessToken(user *models.User) (string, error) {
 // ValidateToken verifies a JWT token and returns the claims
 func (s *AuthService) ValidateToken(tokenString string) (jwt.MapClaims, error) {
 	// Parse the token
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		// Validate the signing method
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, ErrInvalidToken
 		}
-		return s.jwtSecret, nil
+		return s.JwtSecret, nil
 	})
 
 	if err != nil {
@@ -147,7 +150,7 @@ func (s *AuthService) ValidateToken(tokenString string) (jwt.MapClaims, error) {
 // LoginWithRefresh authenticates a user and returns both access and refresh tokens
 func (s *AuthService) LoginWithRefresh(email, password string, refreshTokenTTL time.Duration) (accessToken string, refreshToken string, err error) {
 	// Get the user from the database
-	user, err := s.userRepo.GetUserByEmail(email)
+	user, err := s.UserRepo.GetUserByEmail(email)
 	if err != nil {
 		return "", "", ErrInvalidCredentials
 	}
@@ -164,7 +167,7 @@ func (s *AuthService) LoginWithRefresh(email, password string, refreshTokenTTL t
 	}
 
 	// Create a refresh token
-	token, err := s.refreshTokenRepo.CreateRefreshToken(user.ID, refreshTokenTTL)
+	token, err := s.RefreshTokenRepo.CreateRefreshToken(user.ID, refreshTokenTTL)
 	if err != nil {
 		return "", "", err
 	}
@@ -175,7 +178,7 @@ func (s *AuthService) LoginWithRefresh(email, password string, refreshTokenTTL t
 // RefreshAccessToken creates a new access token using a refresh token
 func (s *AuthService) RefreshAccessToken(refreshTokenString string) (string, error) {
 	// Retrieve the refresh token
-	token, err := s.refreshTokenRepo.GetRefreshToken(refreshTokenString)
+	token, err := s.RefreshTokenRepo.GetRefreshToken(refreshTokenString)
 	if err != nil {
 		return "", ErrInvalidToken
 	}
@@ -191,7 +194,7 @@ func (s *AuthService) RefreshAccessToken(refreshTokenString string) (string, err
 	}
 
 	// Get the user
-	user, err := s.userRepo.GetUserByID(token.UserID)
+	user, err := s.UserRepo.GetUserByID(token.UserID)
 	if err != nil {
 		return "", err
 	}
