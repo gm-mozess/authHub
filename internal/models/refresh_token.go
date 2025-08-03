@@ -44,7 +44,7 @@ func (r *RefreshTokenRepository) CreateRefreshToken(userID uuid.UUID, ttl time.D
 
     query := `
         INSERT INTO refresh_tokens (id, user_id, token, expires_at, created_at, revoked)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES (?, ?, ?, ?, ?, ?)
     `
     _, err := r.db.Exec(query, token.ID, token.UserID, token.Token, token.ExpiresAt, token.CreatedAt, token.Revoked)
     if err != nil {
@@ -58,7 +58,7 @@ func (r *RefreshTokenRepository) GetRefreshToken(tokenString string) (*RefreshTo
     query := `
         SELECT id, user_id, token, expires_at, created_at, revoked
         FROM refresh_tokens
-        WHERE token = $1
+        WHERE token = ?
     `
     var token RefreshToken
     err := r.db.QueryRow(query, tokenString).Scan(
@@ -80,7 +80,7 @@ func (r *RefreshTokenRepository) RevokeRefreshToken(tokenString string) error {
     query := `
         UPDATE refresh_tokens
         SET revoked = true
-        WHERE token = $1
+        WHERE token = ?
     `
     _, err := r.db.Exec(query, tokenString)
     return err

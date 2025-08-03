@@ -41,7 +41,7 @@ func (r *UserRepository) CreateUser(email, username, passwordHash string) (*User
 	}
 
 	query := `
-        INSERT INTO User (id, email, username, password, createdat, status)
+        INSERT INTO user (id, email, username, password, createdat, status)
         VALUES (?, ?, ?, ?, ?, ?)
     `
 
@@ -55,7 +55,7 @@ func (r *UserRepository) CreateUser(email, username, passwordHash string) (*User
 
 // GetUserByEmail retrieves a user by their email address
 func (r *UserRepository) GetUserByEmail(email string) (*User, error) {
-	query := `SELECT * FROM User WHERE email = ?`
+	query := `SELECT * FROM user WHERE email = ?`
 
 	var user User
 	var lastLogin sql.NullTime
@@ -83,7 +83,7 @@ func (r *UserRepository) GetUserByEmail(email string) (*User, error) {
 
 // GetUserByID retrieves a user by their ID
 func (r *UserRepository) GetUserByID(id uuid.UUID) (*User, error) {
-	query := `SELECT * FROM User WHERE id = ?`
+	query := `SELECT * FROM user WHERE id = ?`
 
 	var user User
 	var lastLogin sql.NullTime

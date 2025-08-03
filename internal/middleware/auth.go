@@ -51,7 +51,7 @@ func AuthMiddleware(authService *auth.AuthService) func(http.Handler) http.Handl
 				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
 				return
 			}
-
+			//verify if mail is activated
 			userID, err := uuid.Parse(userIDStr)
 			if err != nil {
 				http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
@@ -66,6 +66,8 @@ func AuthMiddleware(authService *auth.AuthService) func(http.Handler) http.Handl
 		})
 	}
 }
+
+
 
 // GetUserID retrieves the user ID from the request context
 func GetUserID(r *http.Request) (uuid.UUID, bool) {

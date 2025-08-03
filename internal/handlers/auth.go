@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,13 +42,11 @@ func (h *AuthHandler) Routes(authService *auth.AuthService, ErrorLog, InfoLog *l
 	// Public routes
 	mux.HandleFunc("/api/auth/register", h.Register)
 	mux.HandleFunc("/api/auth/login", h.Login)
-	//mux.HandleFunc("/api/auth/verify-email/send", h.VerifyEmail)
+	mux.HandleFunc("/api/auth/verify-email/send", h.VerifyEmail)
 	//mux.HandleFunc("/api/auth/refresh", h.RefreshToken)
 
 	// userHandler := handlers.NewUserHandler(userRepo, errorLog, infoLog)
 
-	// Protected routes
-	//protected := r.PathPrefix("/api").Subrouter()
 	//protected.Use(middleware.AuthMiddleware(authService))
 	//protected.HandleFunc("/profile", userHandler.Profile)
 
@@ -132,10 +131,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api := os.Getenv("API")
-	link := api + "?" + "token=" + registToken.Token
+	link := api + "/verify-email/send?" + "token=" + registToken.Token
 	listMails := []string{user.Email}
+
+	var mailRepo models.MailRepository
 	mail := models.NewMail(link, listMails)
-	err = mail.SendEmail()
+	err = mailRepo.SendEmail(mail)
+	
 	if err != nil {
 		h.ServerError(w, err)
 		return
@@ -146,7 +148,32 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		w.Header().Set("Content-Type", "application/json")
+		h.ClientError(w, http.StatusMethodNotAllowed)
+		return
+	}
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		h.ClientError(w, http.StatusBadRequest)
+		return
+	}
+	registredToken, err := h.AuthService.RegistTokenRepo.GetRegistToken(token)
+	if errors.Is(err, sql.ErrNoRows) {
+		h.ClientError(w, http.StatusBadRequest)
+		return 
+	}else if err != nil{
+		h.ServerError(w, err)
+		return
+	}
 
+	err = h.AuthService.RegistTokenRepo.RevokeRegistToken(registredToken.Token)
+	if err != nil {
+		h.ServerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 // LoginRequest represents the login payload

@@ -66,9 +66,9 @@ func (r *RegistTokenRepository) GetRegistToken(tokenString string) (*RegistToken
     return &token, nil
 }
 
-func (r *RefreshTokenRepository) RevokeRegistToken(tokenString string) error {
+func (r *RegistTokenRepository) RevokeRegistToken(tokenString string) error {
 	query := `
-		UPDATE registration_token SET revoked = true WEHRE token = ?
+		UPDATE registration_token SET revoked = true WHERE token = ?
 	`
 	_,err := r.db.Exec(query, tokenString)
 	return err

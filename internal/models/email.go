@@ -2,9 +2,12 @@ package models
 
 import (
 	"crypto/tls"
+	"database/sql"
 	"fmt"
 	"net/smtp"
 	"os"
+
+	"github.com/google/uuid"
 )
 
 type Mail struct {
@@ -20,8 +23,12 @@ func NewMail(message string, recipient []string) *Mail {
 	}
 }
 
+type MailRepository struct {
+	db *sql.DB
+}
+
 // SendEmail envoie un e-mail via SMTP en utilisant STARTTLS sur le port 587.
-func (s *Mail) SendEmail() error {
+func (s *MailRepository) SendEmail(mail *Mail) error {
 	from := os.Getenv("EMAIL_ADDRESS")
 	password := os.Getenv("PASSWORD")
 	smtpHost := os.Getenv("SMTP_HOST")
@@ -29,11 +36,11 @@ func (s *Mail) SendEmail() error {
 
 	message := []byte(
 		"From: " + from + "\r\n" +
-		"To: " + s.Recipient[0] + "\r\n" + 
-		"Subject: Email Verification\r\n" +
-		"MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\r\n" + // Exemple pour du HTML
-		"\r\n" + // Ligne vide séparant les en-têtes du corps
-		string(s.Message) + "\r\n")
+			"To: " + mail.Recipient[0] + "\r\n" +
+			"Subject: Email Verification\r\n" +
+			"MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\r\n" + // Exemple pour du HTML
+			"\r\n" + // Ligne vide séparant les en-têtes du corps
+			string(mail.Message) + "\r\n")
 
 	// Configuration TLS pour StartTLS
 	// InsecureSkipVerify: true est à utiliser avec PRUDENCE en production.
@@ -46,7 +53,7 @@ func (s *Mail) SendEmail() error {
 
 	// Établir une connexion SMTP non chiffrée initialement
 	// smtp.Dial gère la connexion TCP et la salutation initiale (EHLO).
-	client, err := smtp.Dial(smtpHost+":"+smtpPort)
+	client, err := smtp.Dial(smtpHost + ":" + smtpPort)
 	if err != nil {
 		return fmt.Errorf("failed to dial SMTP server: %v", err)
 	}
@@ -69,7 +76,7 @@ func (s *Mail) SendEmail() error {
 	}
 
 	// Définir les destinataires
-	for _, recipient := range s.Recipient {
+	for _, recipient := range mail.Recipient {
 		if err := client.Rcpt(recipient); err != nil {
 			return fmt.Errorf("failed to set recipient: %v", err)
 		}
@@ -88,4 +95,15 @@ func (s *Mail) SendEmail() error {
 	}
 
 	return nil
+}
+
+func (s *MailRepository) VerfifyEmail(id uuid.UUID) (bool, error) {
+	query := `SELECT status FROM registration_token WHERE id = ?
+	`
+	status := false
+	err := s.db.QueryRow(query, id).Scan(&status)
+	if err != nil {
+		return status, err
+	}
+	return status, nil 
 }
