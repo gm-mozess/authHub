@@ -8,6 +8,7 @@ import (
 
 	"github.com/gm-mozess/authHub/internal/models"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 var (
@@ -28,11 +29,11 @@ type AuthService struct {
 
 // NewAuthService creates a new authentication service
 func NewAuthService(userRepo *models.UserRepository, refreshTokenRepo *models.RefreshTokenRepository,
-					 registTokenRepo *models.RegistTokenRepository, jwtSecret string, accessTokenTTL time.Duration) *AuthService {
+	registTokenRepo *models.RegistTokenRepository, jwtSecret string, accessTokenTTL time.Duration) *AuthService {
 	return &AuthService{
 		UserRepo:         userRepo,
 		RefreshTokenRepo: refreshTokenRepo,
-		RegistTokenRepo: registTokenRepo,
+		RegistTokenRepo:  registTokenRepo,
 		JwtSecret:        []byte(jwtSecret),
 		AccessTokenTTL:   accessTokenTTL,
 	}
@@ -65,13 +66,51 @@ func (s *AuthService) Register(email, username, password string) (*models.User, 
 	return user, nil
 }
 
-// func (s *AuthService) VerifyEmail(user *models.User) (string, error) {
-// 	// Generate an access token
-// 	token, err := s.generateAccessToken(user)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// }
+func (s *AuthService) VerifyEmail(email any) error {
+	user, err := s.UserRepo.GetUserByEmail(email)
+	if err != nil {
+		return err
+	}
+	err = s.UserRepo.UpdateStatus(user.ID.String())
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *AuthService) SendEmail(id, email any , link string) error {
+	user, err := s.UserRepo.GetUserByEmail(email)
+	if err != nil {
+		return err
+	}
+
+	claims, Token, err := s.GenerateAccessToken(user)
+	if err != nil {
+		return err
+	}
+
+	err = s.RegistTokenRepo.DeleteRegistTokenHistory(user.ID)
+	if err != nil {
+		return err
+	}
+
+	err = s.RegistTokenRepo.InsertRegistToken(claims)
+	if err != nil {
+		return err
+	}
+
+	link = link + Token
+	listMails := []string{user.Email}
+
+	var mailRepo models.MailRepository
+	mail := models.NewMail(link, listMails)
+	err = mailRepo.SendEmail(mail)
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
 // Login authenticates a user and returns an access token
 func (s *AuthService) Login(email, password string) (string, error) {
@@ -87,7 +126,7 @@ func (s *AuthService) Login(email, password string) (string, error) {
 	}
 
 	// Generate an access token
-	token, err := s.GenerateAccessToken(user)
+	_, token, err := s.GenerateAccessToken(user)
 	if err != nil {
 		return "", err
 	}
@@ -96,17 +135,20 @@ func (s *AuthService) Login(email, password string) (string, error) {
 }
 
 // generateAccessToken creates a new JWT access token
-func (s *AuthService) GenerateAccessToken(user *models.User) (string, error) {
+func (s *AuthService) GenerateAccessToken(user *models.User) (jwt.MapClaims, string, error) {
 	// Set the expiration time
 	expirationTime := time.Now().Add(s.AccessTokenTTL)
 
 	// Create the JWT claims
 	claims := jwt.MapClaims{
-		"sub":      user.ID.String(),      // subject (user ID)
-		"username": user.Username,         // custom claim
-		"email":    user.Email,            // custom claim
-		"exp":      expirationTime.Unix(), // expiration time
-		"iat":      time.Now().Unix(),     // issued at time
+		"sub":      user.ID.String(),
+		"username": user.Username,
+		"email":    user.Email,
+		"exp":      expirationTime.Unix(),
+		"iat":      time.Now().Unix(),
+		"id":       uuid.New(),
+		"jti":      uuid.New(),
+		"revoked":  false, // revoked status
 	}
 
 	// Create the token with claims
@@ -115,10 +157,10 @@ func (s *AuthService) GenerateAccessToken(user *models.User) (string, error) {
 	// Sign the token with our secret key
 	tokenString, err := token.SignedString(s.JwtSecret)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
-	return tokenString, nil
+	return claims, tokenString, nil
 }
 
 // ValidateToken verifies a JWT token and returns the claims
@@ -147,6 +189,30 @@ func (s *AuthService) ValidateToken(tokenString string) (jwt.MapClaims, error) {
 	return nil, ErrInvalidToken
 }
 
+
+func (s *AuthService) ResetPassword(email any, old_password, new_password string) error {
+	// Get the user from the database
+	user, err := s.UserRepo.GetUserByEmail(email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows){
+			return ErrInvalidCredentials
+		}
+		return err
+	}
+
+	// Verify the password
+	if err := VerifyPassword(user.PasswordHash, old_password); err != nil {
+		return ErrInvalidCredentials
+	}
+	newHashedPassword, err := HashPassword(new_password)
+	if err != nil {
+		return err
+	}
+
+	err = s.UserRepo.ResetPassword(email, newHashedPassword)
+	return err
+}
+
 // LoginWithRefresh authenticates a user and returns both access and refresh tokens
 func (s *AuthService) LoginWithRefresh(email, password string, refreshTokenTTL time.Duration) (accessToken string, refreshToken string, err error) {
 	// Get the user from the database
@@ -161,7 +227,7 @@ func (s *AuthService) LoginWithRefresh(email, password string, refreshTokenTTL t
 	}
 
 	// Generate an access token
-	accessToken, err = s.GenerateAccessToken(user)
+	_, accessToken, err = s.GenerateAccessToken(user)
 	if err != nil {
 		return "", "", err
 	}
@@ -200,11 +266,10 @@ func (s *AuthService) RefreshAccessToken(refreshTokenString string) (string, err
 	}
 
 	// Generate a new access token
-	accessToken, err := s.GenerateAccessToken(user)
+	_, accessToken, err := s.GenerateAccessToken(user)
 	if err != nil {
 		return "", err
 	}
 
 	return accessToken, nil
 }
-

@@ -13,7 +13,6 @@ import (
 
 	"github.com/gm-mozess/authHub/internal/auth"
 	"github.com/gm-mozess/authHub/internal/middleware"
-	"github.com/gm-mozess/authHub/internal/models"
 )
 
 var (
@@ -42,7 +41,9 @@ func (h *AuthHandler) Routes(authService *auth.AuthService, ErrorLog, InfoLog *l
 	// Public routes
 	mux.HandleFunc("/api/auth/register", h.Register)
 	mux.HandleFunc("/api/auth/login", h.Login)
-	mux.HandleFunc("/api/auth/verify-email/send", h.VerifyEmail)
+	mux.HandleFunc("/api/auth/verify-email", h.VerifyEmail)
+	mux.HandleFunc("/api/auth/verify-email/send", h.SendEmail)
+	mux.HandleFunc("/api/auth/verify/reset-password", h.ResetPassword)
 	//mux.HandleFunc("/api/auth/refresh", h.RefreshToken)
 
 	// userHandler := handlers.NewUserHandler(userRepo, errorLog, infoLog)
@@ -125,26 +126,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	registToken, err := h.AuthService.RegistTokenRepo.CreateRegistToken(user.ID, 15*time.Minute)
-	if err != nil {
-		h.ServerError(w, err)
-		return
-	}
 	api := os.Getenv("API")
-	link := api + "/verify-email/send?" + "token=" + registToken.Token
-	listMails := []string{user.Email}
-
-	var mailRepo models.MailRepository
-	mail := models.NewMail(link, listMails)
-	err = mailRepo.SendEmail(mail)
-	
+	link := api + "/verify-email?token="
+	err = h.AuthService.SendEmail(user.ID.String(), user.Email, link)
 	if err != nil {
 		h.ServerError(w, err)
 		return
 	}
-
-	w.WriteHeader(http.StatusCreated)
-
+	http.Redirect(w, r, api+"/login", http.StatusPermanentRedirect)
 }
 
 func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
@@ -154,24 +143,45 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		h.ClientError(w, http.StatusMethodNotAllowed)
 		return
 	}
-	token := r.URL.Query().Get("token")
-	if token == "" {
+	query := r.URL.Query().Get("token")
+	if query == "" {
 		h.ClientError(w, http.StatusBadRequest)
 		return
 	}
-	registredToken, err := h.AuthService.RegistTokenRepo.GetRegistToken(token)
+
+	claims, err := h.AuthService.ValidateToken(query)
+	if err != nil {
+		h.ClientError(w, http.StatusUnauthorized)
+		return
+	}
+	token := claims["jti"]
+	id := claims["id"]
+	email := claims["email"]
+
+	registredToken, err := h.AuthService.RegistTokenRepo.GetRegistToken(token, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		h.ClientError(w, http.StatusBadRequest)
-		return 
-	}else if err != nil{
+		return
+	} else if err != nil {
 		h.ServerError(w, err)
 		return
 	}
 
-	err = h.AuthService.RegistTokenRepo.RevokeRegistToken(registredToken.Token)
+	err = h.AuthService.RegistTokenRepo.RevokeRegistToken(registredToken.Token, registredToken.ID.String())
 	if err != nil {
 		h.ServerError(w, err)
 		return
+	}
+
+	err = h.AuthService.VerifyEmail(email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			h.ClientError(w, http.StatusUnauthorized)
+			return
+		} else {
+			h.ServerError(w, err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -234,10 +244,114 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the token
-	response := LoginResponse{Token: token}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	cookie := http.Cookie{
+		Name: "token",
+		Value: token,
+		MaxAge: -1,
+		Expires: time.Unix(900, 0),
+		HttpOnly: true,
+	}
+
+	http.SetCookie(w, &cookie)
+}
+
+func (h *AuthHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		if  errors.Is(err, http.ErrNoCookie){
+			h.ClientError(w, http.StatusBadRequest)
+		}
+	}
+
+	claims, err := h.AuthService.ValidateToken(cookie.Value)
+	if err != nil {
+		h.ClientError(w, http.StatusUnauthorized)
+		return
+	}
+	id := claims["id"]
+	email := claims["email"]
+
+	api := os.Getenv("API")
+	link := api + "/verify-email?token="
+	err = h.AuthService.SendEmail(id, email, link)
+	if err != nil {
+		h.ServerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+type ResetPasswordRequest struct {
+	OldPassword 			string `json:"old_password"`
+	NewPassword 			string `json:"new_password"`
+	PasswordConfirmation	string `json:"confirm_password"`
+	Validator auth.Validator
+
+}
+
+type ResetPasswordResponse struct {
+	Validator auth.Validator
+}
+
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost{
+		w.Header().Set("Allow", http.MethodPost)
+		w.Header().Set("Content-Type", "application/json")
+		h.ClientError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		if  errors.Is(err, http.ErrNoCookie){
+			h.ClientError(w, http.StatusBadRequest)
+			return
+		}
+	}
+
+	var req ResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.ClientError(w, http.StatusBadRequest)
+		return
+	}
+
+	req.Validator.CheckField(auth.NotBlank(req.OldPassword), "old_password", "this field cannot be blank")
+	req.Validator.CheckField(auth.NotBlank(req.NewPassword), "new_password", "this field cannot be blank")
+	req.Validator.CheckField(auth.Matches(req.PasswordConfirmation), "confirmation_password", "his field cannot be blank")
+	req.Validator.CheckField(auth.MaxChars(req.NewPassword, 100), "new_password", "this field cannot be more than 100 characters long")
+	req.Validator.CheckField(auth.MinChars(req.NewPassword, 8), "new_password", "this field cannot be less than 8")
+	req.Validator.CheckField(req.OldPassword == req.PasswordConfirmation, "confirmation_password", "passwords are not identique")
+	req.Validator.CheckField(req.OldPassword != req.NewPassword, "new_password", "old and new password are same")
+
+	response := LoginResponse{Validator: req.Validator}
+	if !req.Validator.Valid() {
+		h.ClientError(w, http.StatusUnprocessableEntity)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	claims, err := h.AuthService.ValidateToken(cookie.Value)
+	if err != nil {
+		h.ClientError(w, http.StatusUnauthorized)
+		return
+	}
+
+	email := claims["email"]
+	err = h.AuthService.ResetPassword(email, req.OldPassword, req.NewPassword)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidCredentials){
+			h.ClientError(w, http.StatusForbidden)
+			req.Validator.AddNonFieldError("password is not correct")
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+			return
+		}else{
+			h.ServerError(w, err)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 type RefreshRequest struct {

@@ -54,7 +54,7 @@ func (r *UserRepository) CreateUser(email, username, passwordHash string) (*User
 }
 
 // GetUserByEmail retrieves a user by their email address
-func (r *UserRepository) GetUserByEmail(email string) (*User, error) {
+func (r *UserRepository) GetUserByEmail(email any) (*User, error) {
 	query := `SELECT * FROM user WHERE email = ?`
 
 	var user User
@@ -107,4 +107,17 @@ func (r *UserRepository) GetUserByID(id uuid.UUID) (*User, error) {
 	}
 
 	return &user, nil
+}
+
+func (r *UserRepository) UpdateStatus(userID string) error {
+	query := `UPDATE user SET status = verified where id = ?`
+	_, err := r.db.Exec(query, userID)
+	return err
+}
+
+
+func (r *UserRepository) ResetPassword(email any, newHash_password string) error {
+	query := `UPDATE user SET password = ? WHERE email = ?`
+	_, err := r.db.Exec(query, email, newHash_password)
+	return err
 }
