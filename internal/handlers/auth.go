@@ -56,8 +56,8 @@ func (h *AuthHandler) Routes(authService *auth.AuthService, ErrorLog, InfoLog *l
 
 // RegisterRequest represents the registration payload
 type RegisterRequest struct {
-	Email    string `json:"email"`
 	Username string `json:"username"`
+	Email    string `json:"email"`
 	Password string `json:"password"`
 	auth.Validator
 }
@@ -107,7 +107,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Call the auth service to register the user
-	user, err := h.AuthService.Register(req.Email, req.Username, req.Password)
+	user, err := h.AuthService.Register(req.Username, req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, auth.ErrEmailInUse) {
 			req.Validator.AddFieldError("email", auth.ErrEmailInUse.Error())
@@ -122,13 +122,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(response)
 		} else {
 			h.ServerError(w, err)
+			return
 		}
 		return
 	}
 
 	api := os.Getenv("API")
-	link := api + "/verify-email?token="
-	err = h.AuthService.SendEmail(user.ID.String(), user.Email, link)
+	err = h.AuthService.SendEmail(user.Email)
 	if err != nil {
 		h.ServerError(w, err)
 		return
@@ -164,6 +164,11 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if err != nil {
 		h.ServerError(w, err)
+		return
+	}
+
+	if registredToken.Revoked {
+		h.ClientError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -260,6 +265,7 @@ func (h *AuthHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if  errors.Is(err, http.ErrNoCookie){
 			h.ClientError(w, http.StatusBadRequest)
+			return
 		}
 	}
 
@@ -268,12 +274,8 @@ func (h *AuthHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
 		h.ClientError(w, http.StatusUnauthorized)
 		return
 	}
-	id := claims["id"]
 	email := claims["email"]
-
-	api := os.Getenv("API")
-	link := api + "/verify-email?token="
-	err = h.AuthService.SendEmail(id, email, link)
+	err = h.AuthService.SendEmail(email)
 	if err != nil {
 		h.ServerError(w, err)
 		return

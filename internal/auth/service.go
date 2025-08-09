@@ -4,6 +4,7 @@ package auth
 import (
 	"database/sql"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/gm-mozess/authHub/internal/models"
@@ -40,7 +41,7 @@ func NewAuthService(userRepo *models.UserRepository, refreshTokenRepo *models.Re
 }
 
 // Register creates a new user with the provided credentials
-func (s *AuthService) Register(email, username, password string) (*models.User, error) {
+func (s *AuthService) Register(username, email, password string) (*models.User, error) {
 	// Check if user already exists
 	_, err := s.UserRepo.GetUserByEmail(email)
 	if err == nil {
@@ -59,7 +60,7 @@ func (s *AuthService) Register(email, username, password string) (*models.User, 
 	}
 
 	// Create the user
-	user, err := s.UserRepo.CreateUser(email, username, hashedPassword)
+	user, err := s.UserRepo.CreateUser(username, email, hashedPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +79,7 @@ func (s *AuthService) VerifyEmail(email any) error {
 	return nil
 }
 
-func (s *AuthService) SendEmail(id, email any , link string) error {
+func (s *AuthService) SendEmail(email any) error {
 	user, err := s.UserRepo.GetUserByEmail(email)
 	if err != nil {
 		return err
@@ -88,7 +89,6 @@ func (s *AuthService) SendEmail(id, email any , link string) error {
 	if err != nil {
 		return err
 	}
-
 	err = s.RegistTokenRepo.DeleteRegistTokenHistory(user.ID)
 	if err != nil {
 		return err
@@ -99,13 +99,14 @@ func (s *AuthService) SendEmail(id, email any , link string) error {
 		return err
 	}
 
-	link = link + Token
+	api := os.Getenv("API")
+	link := api + "/verify-email?token=" + Token
 	listMails := []string{user.Email}
 
 	var mailRepo models.MailRepository
 	mail := models.NewMail(link, listMails)
-	err = mailRepo.SendEmail(mail)
 
+	err = mailRepo.SendEmail(mail)
 	if err != nil {
 		return err
 	}
@@ -189,12 +190,11 @@ func (s *AuthService) ValidateToken(tokenString string) (jwt.MapClaims, error) {
 	return nil, ErrInvalidToken
 }
 
-
 func (s *AuthService) ResetPassword(email any, old_password, new_password string) error {
 	// Get the user from the database
 	user, err := s.UserRepo.GetUserByEmail(email)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows){
+		if errors.Is(err, sql.ErrNoRows) {
 			return ErrInvalidCredentials
 		}
 		return err

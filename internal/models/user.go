@@ -11,8 +11,8 @@ import (
 // User represents a user in our system
 type User struct {
 	ID           uuid.UUID
-	Email        string
 	Username     string
+	Email        string
 	PasswordHash string
 	CreatedAt    time.Time
 	LastLogin    *time.Time
@@ -30,22 +30,22 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 }
 
 // CreateUser adds a new user to the database
-func (r *UserRepository) CreateUser(email, username, passwordHash string) (*User, error) {
+func (r *UserRepository) CreateUser(username, email, passwordHash string) (*User, error) {
 	user := &User{
 		ID:           uuid.New(),
-		Email:        email,
 		Username:     username,
+		Email:        email,
 		PasswordHash: passwordHash,
-		CreatedAt:    time.Now(),
 		Status:       "not verified",
+		CreatedAt:    time.Now(),
 	}
 
 	query := `
-        INSERT INTO user (id, email, username, password, createdat, status)
+        INSERT INTO user (id, username, email, password, status, createdat)
         VALUES (?, ?, ?, ?, ?, ?)
     `
 
-	_, err := r.db.Exec(query, user.ID, user.Email, user.Username, user.PasswordHash, user.CreatedAt, user.Status)
+	_, err := r.db.Exec(query, user.ID, user.Username, user.Email, user.PasswordHash, user.Status, user.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -62,8 +62,8 @@ func (r *UserRepository) GetUserByEmail(email any) (*User, error) {
 
 	err := r.db.QueryRow(query, email).Scan(
 		&user.ID,
-		&user.Email,
 		&user.Username,
+		&user.Email,
 		&user.PasswordHash,
 		&user.Status,
 		&lastLogin,
@@ -110,11 +110,10 @@ func (r *UserRepository) GetUserByID(id uuid.UUID) (*User, error) {
 }
 
 func (r *UserRepository) UpdateStatus(userID string) error {
-	query := `UPDATE user SET status = verified where id = ?`
+	query := `UPDATE user SET status ="verified" where id = ?`
 	_, err := r.db.Exec(query, userID)
 	return err
 }
-
 
 func (r *UserRepository) ResetPassword(email any, newHash_password string) error {
 	query := `UPDATE user SET password = ? WHERE email = ?`
