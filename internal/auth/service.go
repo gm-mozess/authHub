@@ -79,16 +79,13 @@ func (s *AuthService) VerifyEmail(email any) error {
 	return nil
 }
 
-func (s *AuthService) SendEmail(email any) error {
-	user, err := s.UserRepo.GetUserByEmail(email)
-	if err != nil {
-		return err
-	}
+func (s *AuthService) SendVerificationEmail(user *models.User) error {
 
 	claims, Token, err := s.GenerateAccessToken(user)
 	if err != nil {
 		return err
 	}
+
 	err = s.RegistTokenRepo.DeleteRegistTokenHistory(user.ID)
 	if err != nil {
 		return err
@@ -101,16 +98,27 @@ func (s *AuthService) SendEmail(email any) error {
 
 	api := os.Getenv("API")
 	link := api + "/verify-email?token=" + Token
-	listMails := []string{user.Email}
-
 	var mailRepo models.MailRepository
-	mail := models.NewMail(link, listMails)
 
-	err = mailRepo.SendEmail(mail)
+	err = mailRepo.SendEmail(user.Email, link)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+
+func (s *AuthService) GetEmailVerified(email string) error {
+	user, err := s.UserRepo.GetUserByEmail(email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows){
+			return ErrInvalidCredentials
+		}else{
+			return err
+		}
+	}
+	err = s.SendVerificationEmail(user)
+	return err	
 }
 
 // Login authenticates a user and returns an access token
@@ -211,6 +219,30 @@ func (s *AuthService) ResetPassword(email any, old_password, new_password string
 
 	err = s.UserRepo.ResetPassword(email, newHashedPassword)
 	return err
+}
+
+func (s *AuthService) GetPasswordReset(email string) error {
+	user, err := s.UserRepo.GetUserByEmail(email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInvalidCredentials
+		}
+		return err
+	}
+	_, token, err := s.GenerateAccessToken(user)
+	if err != nil {
+		return err
+	}
+
+	api := os.Getenv("API")
+	link := api + "/reset-password?token=" + token
+	var mailRepo models.MailRepository
+
+	err = mailRepo.SendEmail(user.Email, link)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // LoginWithRefresh authenticates a user and returns both access and refresh tokens

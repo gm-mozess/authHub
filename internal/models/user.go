@@ -117,6 +117,6 @@ func (r *UserRepository) UpdateStatus(userID string) error {
 
 func (r *UserRepository) ResetPassword(email any, newHash_password string) error {
 	query := `UPDATE user SET password = ? WHERE email = ?`
-	_, err := r.db.Exec(query, email, newHash_password)
+	_, err := r.db.Exec(query, newHash_password, email)
 	return err
 }

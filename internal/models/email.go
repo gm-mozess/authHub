@@ -28,7 +28,11 @@ type MailRepository struct {
 }
 
 // SendEmail envoie un e-mail via SMTP en utilisant STARTTLS sur le port 587.
-func (s *MailRepository) SendEmail(mail *Mail) error {
+func (s *MailRepository) SendEmail(email, link string) error {
+
+	listMails := []string{email}
+	mail := NewMail(link, listMails)
+
 	from := os.Getenv("EMAIL_ADDRESS")
 	password := os.Getenv("PASSWORD")
 	smtpHost := os.Getenv("SMTP_HOST")
@@ -105,5 +109,5 @@ func (s *MailRepository) VerfifyEmail(id uuid.UUID) (bool, error) {
 	if err != nil {
 		return status, err
 	}
-	return status, nil 
+	return status, nil
 }
