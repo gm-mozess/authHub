@@ -25,18 +25,16 @@ type AuthService struct {
 	RefreshTokenRepo *models.RefreshTokenRepository
 	RegistTokenRepo  *models.RegistTokenRepository
 	JwtSecret        []byte
-	AccessTokenTTL   time.Duration
 }
 
 // NewAuthService creates a new authentication service
 func NewAuthService(userRepo *models.UserRepository, refreshTokenRepo *models.RefreshTokenRepository,
-	registTokenRepo *models.RegistTokenRepository, jwtSecret string, accessTokenTTL time.Duration) *AuthService {
+	registTokenRepo *models.RegistTokenRepository, jwtSecret string) *AuthService {
 	return &AuthService{
 		UserRepo:         userRepo,
 		RefreshTokenRepo: refreshTokenRepo,
 		RegistTokenRepo:  registTokenRepo,
 		JwtSecret:        []byte(jwtSecret),
-		AccessTokenTTL:   accessTokenTTL,
 	}
 }
 
@@ -81,7 +79,7 @@ func (s *AuthService) VerifyEmail(email any) error {
 
 func (s *AuthService) SendVerificationEmail(user *models.User) error {
 
-	claims, Token, err := s.GenerateAccessToken(user)
+	claims, Token, err := s.GenerateAccessToken(user, 24*time.Hour)
 	if err != nil {
 		return err
 	}
@@ -106,7 +104,6 @@ func (s *AuthService) SendVerificationEmail(user *models.User) error {
 	}
 	return nil
 }
-
 
 func (s *AuthService) GetEmailVerified(email string) error {
 	user, err := s.UserRepo.GetUserByEmail(email)
@@ -135,7 +132,7 @@ func (s *AuthService) Login(email, password string) (string, error) {
 	}
 
 	// Generate an access token
-	_, token, err := s.GenerateAccessToken(user)
+	_, token, err := s.GenerateAccessToken(user, 15*time.Minute)
 	if err != nil {
 		return "", err
 	}
@@ -144,9 +141,9 @@ func (s *AuthService) Login(email, password string) (string, error) {
 }
 
 // generateAccessToken creates a new JWT access token
-func (s *AuthService) GenerateAccessToken(user *models.User) (jwt.MapClaims, string, error) {
+func (s *AuthService) GenerateAccessToken(user *models.User, AccessTokenTTL time.Duration) (jwt.MapClaims, string, error) {
 	// Set the expiration time
-	expirationTime := time.Now().Add(s.AccessTokenTTL)
+	expirationTime := time.Now().Add(AccessTokenTTL)
 
 	// Create the JWT claims
 	claims := jwt.MapClaims{
@@ -229,7 +226,7 @@ func (s *AuthService) GetPasswordReset(email string) error {
 		}
 		return err
 	}
-	_, token, err := s.GenerateAccessToken(user)
+	_, token, err := s.GenerateAccessToken(user, 10*time.Minute)
 	if err != nil {
 		return err
 	}
@@ -259,7 +256,7 @@ func (s *AuthService) LoginWithRefresh(email, password string, refreshTokenTTL t
 	}
 
 	// Generate an access token
-	_, accessToken, err = s.GenerateAccessToken(user)
+	_, accessToken, err = s.GenerateAccessToken(user, 30*time.Minute)
 	if err != nil {
 		return "", "", err
 	}
@@ -298,7 +295,7 @@ func (s *AuthService) RefreshAccessToken(refreshTokenString string) (string, err
 	}
 
 	// Generate a new access token
-	_, accessToken, err := s.GenerateAccessToken(user)
+	_, accessToken, err := s.GenerateAccessToken(user, 30*time.Minute)
 	if err != nil {
 		return "", err
 	}

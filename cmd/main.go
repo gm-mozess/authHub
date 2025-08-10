@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/gm-mozess/authHub/db"
 	"github.com/gm-mozess/authHub/internal/auth"
@@ -32,7 +31,7 @@ func loadEnv() {
 }
 
 func main() {
-    // 	//here we set a default port, he can be modified with : go run . -addr=":port"
+	// 	//here we set a default port, he can be modified with : go run . -addr=":port"
 	addr := flag.String("addr", ":4000", "HTTP network address")
 	dns := flag.String("dns", "net:code@/authHub?parseTime=true", "MySQL data source name")
 	flag.Parse()
@@ -44,14 +43,14 @@ func main() {
 	database, err := db.Connect(*dns)
 	if err != nil {
 		ErrorLog.Fatal(err)
- 	}
+	}
 
 	// Create repositories
 	userRepo := models.NewUserRepository(database)
 	refreshTokenRepo := models.NewRefreshTokenRepository(database)
 	registTokenRepo := models.NewRegistTokenRepository(database)
 	// Create services
-	authService := auth.NewAuthService(userRepo, refreshTokenRepo, &registTokenRepo, os.Getenv("JWT_SECRET"), 15*time.Minute)
+	authService := auth.NewAuthService(userRepo, refreshTokenRepo, &registTokenRepo, os.Getenv("JWT_SECRET"))
 	// Create handlers
 	authHandler := handlers.NewAuthHandler(authService, ErrorLog, InfoLog)
 	srv := http.Server{
@@ -64,4 +63,3 @@ func main() {
 	err = srv.ListenAndServe()
 	ErrorLog.Fatal(err)
 }
-

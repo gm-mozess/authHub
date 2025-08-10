@@ -7,8 +7,8 @@
 
 ## 🔐 Core Authentication
 - ✅  Inscription/Connexion classique (email + password)
-- [ ] Validation email avec tokens temporaires
-- [ ] Reset password avec liens sécurisés
+- ✅  Validation email avec tokens temporaires
+- ✅  Reset password avec liens sécurisés
 - [ ] JWT tokens (access + refresh) avec rotation
 - [ ] Session management avec Redis
 - [ ] Rate limiting sur les tentatives de connexion
