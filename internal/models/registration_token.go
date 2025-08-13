@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -25,18 +24,22 @@ func NewRegistTokenRepository(db *sql.DB) RegistTokenRepository {
 	return RegistTokenRepository{db: db}
 }
 
-func (r *RegistTokenRepository) InsertRegistToken(claims jwt.MapClaims) error {
-	userID := claims["sub"]
-	token := claims["jti"]
-	id := claims["id"]
-	expiresAt := claims["exp"]
-	revoked := claims["revoked"]
+func NewRegistToken(id, userID uuid.UUID, token string, expiresAt time.Time, revoked bool) RegistToken {
+	return RegistToken{
+		ID: id,
+		UserID: userID,
+		Token: token,
+		ExpiresAt: expiresAt,
+		Revoked: revoked,
+	}
+}
 
+func (r *RegistTokenRepository) InsertRegistToken(token *RegistToken) error {
 	query := `
 		 INSERT INTO registration_token (id, user_id, token, expires_at, revoked)
         VALUES (?, ?, ?, FROM_UNIXTIME(?), ?)
 	`
-	_, err := r.db.Exec(query, id, userID, token, expiresAt, revoked)
+	_, err := r.db.Exec(query, token.ID, token.UserID, token.Token, token.ExpiresAt, token.Revoked)
 	if err != nil {
 		return err
 	}

@@ -201,64 +201,79 @@ type LoginResponse struct {
 
 // Login handles user login
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		w.Header().Set("Content-Type", "application/json")
-		h.ClientError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Parse the request body
-	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.ClientError(w, http.StatusBadRequest)
-		return
-	}
-
-	req.Validator.CheckField(auth.NotBlank(req.Email), "email", "this field cannot be blank")
-	req.Validator.CheckField(auth.Matches(req.Email), "email", "This field must be a valid email address")
-	req.Validator.CheckField(auth.NotBlank(req.Password), "password", "this field cannot be blank")
-
-	if !req.Validator.Valid() {
-		response := LoginResponse{Validator: req.Validator}
-		h.ClientError(w, http.StatusUnprocessableEntity)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-		return
-	}
-
-	// Attempt to login
-	token, err := h.AuthService.Login(req.Email, req.Password)
-	if err != nil {
-		if errors.Is(err, auth.ErrInvalidCredentials) {
-			req.Validator.AddNonFieldError(auth.ErrInvalidCredentials.Error())
-			response := LoginResponse{Validator: req.Validator}
-			w.Header().Set("Content-Type", "application/json")
-			h.ClientError(w, http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(response)
-			return
-		} else {
-			h.ServerError(w, err)
-		}
-		return
-	}
-
-	 // For a cookie that expires in 1 hour (3600 seconds)
-    expirationTime := time.Now().Add(1 * time.Hour)
-    
-    cookie := http.Cookie{
-        Name:     "token",
-        Value:    token,
-        Path:     "/", // This is important to make the cookie available on all paths
-        MaxAge:   3600, // 1 hour in seconds
-        Expires:  expirationTime,
-        HttpOnly: true,
-        //Secure:   true, // Use 'Secure: true' in production with HTTPS
-        SameSite: http.SameSiteLaxMode, // Recommended for security
+    if r.Method != http.MethodPost {
+        w.Header().Set("Allow", http.MethodPost)
+        w.Header().Set("Content-Type", "application/json")
+        h.ClientError(w, http.StatusMethodNotAllowed)
+        return
     }
 
-	http.SetCookie(w, &cookie)
+    // Parse the request body
+    var req LoginRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        h.ClientError(w, http.StatusBadRequest)
+        return
+    }
+
+    req.Validator.CheckField(auth.NotBlank(req.Email), "email", "this field cannot be blank")
+    req.Validator.CheckField(auth.Matches(req.Email), "email", "This field must be a valid email address")
+    req.Validator.CheckField(auth.NotBlank(req.Password), "password", "this field cannot be blank")
+
+    if !req.Validator.Valid() {
+        response := LoginResponse{Validator: req.Validator}
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusUnprocessableEntity)
+        json.NewEncoder(w).Encode(response)
+        return
+    }
+
+    // Attempt to login
+    idToken, accessToken, err := h.AuthService.Login(req.Email, req.Password)
+    if err != nil {
+        if errors.Is(err, auth.ErrInvalidCredentials) {
+            req.Validator.AddNonFieldError(auth.ErrInvalidCredentials.Error())
+            response := LoginResponse{Validator: req.Validator}
+            w.Header().Set("Content-Type", "application/json")
+            w.WriteHeader(http.StatusUnauthorized)
+            json.NewEncoder(w).Encode(response)
+            return
+        } else {
+            h.ServerError(w, err)
+            return
+        }
+    }
+
+
+    
+    idTokenCookie := http.Cookie{
+        Name:     "id_token",
+        Value:    idToken,
+        Path:     "/",
+        MaxAge:   3600, // 1 hour in seconds
+        Expires:  time.Now().Add(24 * time.Hour),
+        HttpOnly: true,
+        //Secure: true, // Use 'Secure: true' in production with HTTPS
+        SameSite: http.SameSiteLaxMode,
+    }
+
+    accessTokenCookie := http.Cookie{
+        Name:     "access_token",
+        Value:    accessToken,
+        Path:     "/",
+        MaxAge:   3600,
+        Expires:  time.Now().Add(1 * time.Hour),
+        HttpOnly: true,
+        //Secure: true,
+        SameSite: http.SameSiteLaxMode,
+    }
+
+    http.SetCookie(w, &idTokenCookie)
+    http.SetCookie(w, &accessTokenCookie)
+    
+    // Send success response
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
 func (h *AuthHandler) GetEmailVerified(w http.ResponseWriter, r *http.Request) {

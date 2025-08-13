@@ -79,7 +79,7 @@ func (s *AuthService) VerifyEmail(email any) error {
 
 func (s *AuthService) SendVerificationEmail(user *models.User) error {
 
-	claims, Token, err := s.GenerateAccessToken(user, 24*time.Hour)
+	token, err := s.GenerateIDToken(user, 24*time.Hour)
 	if err != nil {
 		return err
 	}
@@ -89,13 +89,17 @@ func (s *AuthService) SendVerificationEmail(user *models.User) error {
 		return err
 	}
 
-	err = s.RegistTokenRepo.InsertRegistToken(claims)
+	id := uuid.New()
+	expirationTime := time.Now().Add(24*time.Hour)
+	registToken := models.NewRegistToken(id, user.ID, token, expirationTime, false)
+
+	err = s.RegistTokenRepo.InsertRegistToken(&registToken)
 	if err != nil {
 		return err
 	}
 
 	api := os.Getenv("API")
-	link := api + "/verify-email?token=" + Token
+	link := api + "/verify-email?token=" + token
 	var mailRepo models.MailRepository
 
 	err = mailRepo.SendEmail(user.Email, link)
@@ -119,42 +123,43 @@ func (s *AuthService) GetEmailVerified(email string) error {
 }
 
 // Login authenticates a user and returns an access token
-func (s *AuthService) Login(email, password string) (string, error) {
+func (s *AuthService) Login(email, password string) (string, string, error) {
 	// Get the user from the database
 	user, err := s.UserRepo.GetUserByEmail(email)
 	if err != nil {
-		return "", ErrInvalidCredentials
+		return "", "", ErrInvalidCredentials
 	}
 
 	// Verify the password
 	if err := VerifyPassword(user.PasswordHash, password); err != nil {
-		return "", ErrInvalidCredentials
+		return "", "", ErrInvalidCredentials
 	}
 
 	// Generate an access token
-	_, token, err := s.GenerateAccessToken(user, 15*time.Minute)
+	accesToken, err := s.GenerateAccessToken(user, 15*time.Minute)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return token, nil
+	idToken, err := s.GenerateIDToken(user, 24*time.Hour)
+
+
+	return idToken, accesToken, nil
 }
 
 // generateAccessToken creates a new JWT access token
-func (s *AuthService) GenerateAccessToken(user *models.User, AccessTokenTTL time.Duration) (jwt.MapClaims, string, error) {
+func (s *AuthService) GenerateAccessToken(user *models.User, AccessTokenTTL time.Duration) (string, error) {
 	// Set the expiration time
 	expirationTime := time.Now().Add(AccessTokenTTL)
+	api := os.Getenv("API")
 
 	// Create the JWT claims
 	claims := jwt.MapClaims{
-		"sub":      user.ID.String(),
-		"username": user.Username,
-		"email":    user.Email,
-		"exp":      expirationTime.Unix(),
-		"iat":      time.Now().Unix(),
-		"id":       uuid.New(),
-		"jti":      uuid.New(),
-		"revoked":  false, // revoked status
+		"iss": api,
+		"sub": user.ID.String(),
+		"aud": api,
+		"exp": expirationTime.Unix(),
+		"iat": time.Now().Unix(),
 	}
 
 	// Create the token with claims
@@ -163,10 +168,34 @@ func (s *AuthService) GenerateAccessToken(user *models.User, AccessTokenTTL time
 	// Sign the token with our secret key
 	tokenString, err := token.SignedString(s.JwtSecret)
 	if err != nil {
-		return nil, "", err
+		return "", err
+	}
+	return tokenString, nil
+}
+
+func (s *AuthService) GenerateIDToken(user *models.User, IDTokenTTL time.Duration) (string, error){
+
+	expirationTime := time.Now().Add(IDTokenTTL)
+	api := os.Getenv("API")
+
+	claims := jwt.MapClaims {
+		"iss": api,
+		"sub": user.ID.String(),
+		"exp": expirationTime.Unix(),
+		"iat": time.Now().Unix(),
+		"username": user.Username,
+		"email":    user.Email,
+		"revoked":  false, // revoked status
+		//by status we mean that if email is verified or not
+		"status" : user.Status,
 	}
 
-	return claims, tokenString, nil
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(s.JwtSecret)
+	if err != nil {
+		return "", err
+	}
+	return tokenString, nil
 }
 
 // ValidateToken verifies a JWT token and returns the claims
@@ -226,7 +255,7 @@ func (s *AuthService) GetPasswordReset(email string) error {
 		}
 		return err
 	}
-	_, token, err := s.GenerateAccessToken(user, 10*time.Minute)
+	token, err := s.GenerateAccessToken(user, 15*time.Minute)
 	if err != nil {
 		return err
 	}
@@ -256,7 +285,7 @@ func (s *AuthService) LoginWithRefresh(email, password string, refreshTokenTTL t
 	}
 
 	// Generate an access token
-	_, accessToken, err = s.GenerateAccessToken(user, 30*time.Minute)
+	accessToken, err = s.GenerateAccessToken(user, 15*time.Minute)
 	if err != nil {
 		return "", "", err
 	}
@@ -295,7 +324,7 @@ func (s *AuthService) RefreshAccessToken(refreshTokenString string) (string, err
 	}
 
 	// Generate a new access token
-	_, accessToken, err := s.GenerateAccessToken(user, 30*time.Minute)
+	accessToken, err := s.GenerateAccessToken(user, 15*time.Minute)
 	if err != nil {
 		return "", err
 	}
