@@ -42,11 +42,16 @@ func (h *AuthHandler) Routes(authService *auth.AuthService, ErrorLog, InfoLog *l
 	mux.HandleFunc("/api/auth/register", h.Register)
 	mux.HandleFunc("/api/auth/login", h.Login)
 	mux.HandleFunc("/api/auth/verify-email", h.VerifyEmail)
-	mux.HandleFunc("/api/auth/verify-email/send", h.GetEmailVerified)
-	mux.HandleFunc("/api/auth/reset-password/send", h.GetPasswordReset)
-	mux.HandleFunc("/api/auth/reset-password", h.ResetPassword)
-	mux.HandleFunc("/api/auth/change-password", h.ChangePassword)
 
+	//protected routes
+	protected := middleware.AuthMiddleware(h.AuthService)
+
+	mux.Handle("/api/auth/verify-email/send", protected(h.GetEmailVerified))
+	mux.Handle("/api/auth/reset-password/send", protected(h.GetPasswordReset))
+	mux.Handle("/api/auth/reset-password", protected(h.ResetPassword))
+	mux.Handle("/api/auth/change-password", protected(h.ChangePassword))
+
+	//protected := middleware.AuthMiddleware(authService)
 	return h.LogRequest(middleware.SecureHeaders(mux))
 }
 
@@ -149,11 +154,11 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		h.ClientError(w, http.StatusUnauthorized)
 		return
 	}
-	token := claims["jti"]
-	id := claims["id"]
-	email := claims["email"]
 
-	registredToken, err := h.AuthService.RegistTokenRepo.GetRegistToken(token, id)
+	userId := claims["sub"].(string)
+	email := claims["email"].(string)
+
+	registredToken, err := h.AuthService.RegistTokenRepo.GetRegistToken(userId)
 	if errors.Is(err, sql.ErrNoRows) {
 		h.ClientError(w, http.StatusBadRequest)
 		return
@@ -167,7 +172,7 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.AuthService.RegistTokenRepo.RevokeRegistToken(registredToken.Token, registredToken.ID.String())
+	err = h.AuthService.RegistTokenRepo.RevokeRegistToken(registredToken.UserID.String())
 	if err != nil {
 		h.ServerError(w, err)
 		return
@@ -201,79 +206,77 @@ type LoginResponse struct {
 
 // Login handles user login
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        w.Header().Set("Allow", http.MethodPost)
-        w.Header().Set("Content-Type", "application/json")
-        h.ClientError(w, http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		w.Header().Set("Content-Type", "application/json")
+		h.ClientError(w, http.StatusMethodNotAllowed)
+		return
+	}
 
-    // Parse the request body
-    var req LoginRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        h.ClientError(w, http.StatusBadRequest)
-        return
-    }
+	// Parse the request body
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.ClientError(w, http.StatusBadRequest)
+		return
+	}
 
-    req.Validator.CheckField(auth.NotBlank(req.Email), "email", "this field cannot be blank")
-    req.Validator.CheckField(auth.Matches(req.Email), "email", "This field must be a valid email address")
-    req.Validator.CheckField(auth.NotBlank(req.Password), "password", "this field cannot be blank")
+	req.Validator.CheckField(auth.NotBlank(req.Email), "email", "this field cannot be blank")
+	req.Validator.CheckField(auth.Matches(req.Email), "email", "This field must be a valid email address")
+	req.Validator.CheckField(auth.NotBlank(req.Password), "password", "this field cannot be blank")
 
-    if !req.Validator.Valid() {
-        response := LoginResponse{Validator: req.Validator}
-        w.Header().Set("Content-Type", "application/json")
-        w.WriteHeader(http.StatusUnprocessableEntity)
-        json.NewEncoder(w).Encode(response)
-        return
-    }
+	if !req.Validator.Valid() {
+		response := LoginResponse{Validator: req.Validator}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
 
-    // Attempt to login
-    idToken, accessToken, err := h.AuthService.Login(req.Email, req.Password)
-    if err != nil {
-        if errors.Is(err, auth.ErrInvalidCredentials) {
-            req.Validator.AddNonFieldError(auth.ErrInvalidCredentials.Error())
-            response := LoginResponse{Validator: req.Validator}
-            w.Header().Set("Content-Type", "application/json")
-            w.WriteHeader(http.StatusUnauthorized)
-            json.NewEncoder(w).Encode(response)
-            return
-        } else {
-            h.ServerError(w, err)
-            return
-        }
-    }
+	// Attempt to login
+	idToken, accessToken, err := h.AuthService.Login(req.Email, req.Password)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidCredentials) {
+			req.Validator.AddNonFieldError(auth.ErrInvalidCredentials.Error())
+			response := LoginResponse{Validator: req.Validator}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(response)
+			return
+		} else {
+			h.ServerError(w, err)
+			return
+		}
+	}
 
+	idTokenCookie := http.Cookie{
+		Name:     "id_token",
+		Value:    idToken,
+		Path:     "/",
+		MaxAge:   3600, // 1 hour in seconds
+		Expires:  time.Now().Add(24 * time.Hour),
+		HttpOnly: true,
+		//Secure: true, // Use 'Secure: true' in production with HTTPS
+		SameSite: http.SameSiteLaxMode,
+	}
 
-    
-    idTokenCookie := http.Cookie{
-        Name:     "id_token",
-        Value:    idToken,
-        Path:     "/",
-        MaxAge:   3600, // 1 hour in seconds
-        Expires:  time.Now().Add(24 * time.Hour),
-        HttpOnly: true,
-        //Secure: true, // Use 'Secure: true' in production with HTTPS
-        SameSite: http.SameSiteLaxMode,
-    }
+	accessTokenCookie := http.Cookie{
+		Name:     "access_token",
+		Value:    accessToken,
+		Path:     "/",
+		MaxAge:   3600,
+		Expires:  time.Now().Add(1 * time.Hour),
+		HttpOnly: true,
+		//Secure: true,
+		SameSite: http.SameSiteLaxMode,
+	}
 
-    accessTokenCookie := http.Cookie{
-        Name:     "access_token",
-        Value:    accessToken,
-        Path:     "/",
-        MaxAge:   3600,
-        Expires:  time.Now().Add(1 * time.Hour),
-        HttpOnly: true,
-        //Secure: true,
-        SameSite: http.SameSiteLaxMode,
-    }
+	http.SetCookie(w, &idTokenCookie)
+	http.SetCookie(w, &accessTokenCookie)
 
-    http.SetCookie(w, &idTokenCookie)
-    http.SetCookie(w, &accessTokenCookie)
-    
-    // Send success response
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	// Send success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
 func (h *AuthHandler) GetEmailVerified(w http.ResponseWriter, r *http.Request) {
@@ -285,7 +288,7 @@ func (h *AuthHandler) GetEmailVerified(w http.ResponseWriter, r *http.Request) {
 	}
 	cookie, err := r.Cookie("token")
 	if err != nil {
-		if  errors.Is(err, http.ErrNoCookie){
+		if errors.Is(err, http.ErrNoCookie) {
 			h.ClientError(w, http.StatusBadRequest)
 			return
 		}
@@ -299,10 +302,10 @@ func (h *AuthHandler) GetEmailVerified(w http.ResponseWriter, r *http.Request) {
 	email := claims["email"].(string)
 	err = h.AuthService.GetEmailVerified(email)
 	if err != nil {
-		if errors.Is(err, auth.ErrInvalidCredentials){
+		if errors.Is(err, auth.ErrInvalidCredentials) {
 			h.ClientError(w, http.StatusBadRequest)
 			return
-		}else{
+		} else {
 			h.ServerError(w, err)
 			return
 		}
@@ -312,18 +315,17 @@ func (h *AuthHandler) GetEmailVerified(w http.ResponseWriter, r *http.Request) {
 }
 
 type ResetPasswordRequest struct {
-	OldPassword 			string `json:"old_password"`
-	NewPassword 			string `json:"new_password"`
-	PasswordConfirmation	string `json:"confirm_password"`
-	Validator auth.Validator
-
+	OldPassword          string `json:"old_password"`
+	NewPassword          string `json:"new_password"`
+	PasswordConfirmation string `json:"confirm_password"`
+	Validator            auth.Validator
 }
 
 type ResetPasswordResponse struct {
 	Validator auth.Validator
 }
 
-func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request){
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -331,9 +333,9 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request){
 		h.ClientError(w, http.StatusMethodNotAllowed)
 		return
 	}
-	cookie, err := r.Cookie("token")
+	cookie, err := r.Cookie("access_token")
 	if err != nil {
-		if  errors.Is(err, http.ErrNoCookie){
+		if errors.Is(err, http.ErrNoCookie) {
 			h.ClientError(w, http.StatusBadRequest)
 			return
 		}
@@ -367,26 +369,26 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	email := claims["email"].(string)
-	err = h.AuthService.ResetPassword(email, req.OldPassword, req.NewPassword)
+	userID := claims["sub"].(string)
+	err = h.AuthService.ResetPassword(userID, req.OldPassword, req.NewPassword)
 	if err != nil {
-		if errors.Is(err, auth.ErrInvalidCredentials){
+		if errors.Is(err, auth.ErrInvalidCredentials) {
 			h.ClientError(w, http.StatusForbidden)
 			req.Validator.AddNonFieldError("password is not correct")
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(response)
 			return
-		}else{
+		} else {
 			h.ServerError(w, err)
 			return
 		}
 	}
-	w.WriteHeader(http.StatusOK)	
+	w.WriteHeader(http.StatusOK)
 
 }
 
 func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet{
+	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
 		w.Header().Set("Content-Type", "text/html")
 		h.ClientError(w, http.StatusMethodNotAllowed)
@@ -406,12 +408,12 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 type NotifyPasswordReset struct {
-	Email string `json:"email"`
+	Email     string `json:"email"`
 	Validator auth.Validator
 }
 
 func (h *AuthHandler) GetPasswordReset(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost{
+	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		w.Header().Set("Content-Type", "text/html")
 		h.ClientError(w, http.StatusMethodNotAllowed)
@@ -437,10 +439,10 @@ func (h *AuthHandler) GetPasswordReset(w http.ResponseWriter, r *http.Request) {
 
 	err := h.AuthService.GetPasswordReset(req.Email)
 	if err != nil {
-		if errors.Is(err, auth.ErrInvalidCredentials){
+		if errors.Is(err, auth.ErrInvalidCredentials) {
 			h.ClientError(w, http.StatusBadRequest)
 			return
-		}else{
+		} else {
 			h.ServerError(w, err)
 			return
 		}

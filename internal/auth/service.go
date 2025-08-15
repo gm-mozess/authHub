@@ -9,7 +9,6 @@ import (
 
 	"github.com/gm-mozess/authHub/internal/models"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 )
 
 var (
@@ -65,7 +64,7 @@ func (s *AuthService) Register(username, email, password string) (*models.User, 
 	return user, nil
 }
 
-func (s *AuthService) VerifyEmail(email any) error {
+func (s *AuthService) VerifyEmail(email string) error {
 	user, err := s.UserRepo.GetUserByEmail(email)
 	if err != nil {
 		return err
@@ -84,14 +83,13 @@ func (s *AuthService) SendVerificationEmail(user *models.User) error {
 		return err
 	}
 
-	err = s.RegistTokenRepo.DeleteRegistTokenHistory(user.ID)
+	err = s.RegistTokenRepo.DeleteRegistTokenHistory(user.ID.String())
 	if err != nil {
 		return err
 	}
 
-	id := uuid.New()
-	expirationTime := time.Now().Add(24*time.Hour)
-	registToken := models.NewRegistToken(id, user.ID, token, expirationTime, false)
+	expirationTime := time.Now().Add(24 * time.Hour)
+	registToken := models.NewRegistToken(user.ID, token, expirationTime, false)
 
 	err = s.RegistTokenRepo.InsertRegistToken(&registToken)
 	if err != nil {
@@ -112,14 +110,14 @@ func (s *AuthService) SendVerificationEmail(user *models.User) error {
 func (s *AuthService) GetEmailVerified(email string) error {
 	user, err := s.UserRepo.GetUserByEmail(email)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows){
+		if errors.Is(err, sql.ErrNoRows) {
 			return ErrInvalidCredentials
-		}else{
+		} else {
 			return err
 		}
 	}
 	err = s.SendVerificationEmail(user)
-	return err	
+	return err
 }
 
 // Login authenticates a user and returns an access token
@@ -142,7 +140,6 @@ func (s *AuthService) Login(email, password string) (string, string, error) {
 	}
 
 	idToken, err := s.GenerateIDToken(user, 24*time.Hour)
-
 
 	return idToken, accesToken, nil
 }
@@ -173,21 +170,20 @@ func (s *AuthService) GenerateAccessToken(user *models.User, AccessTokenTTL time
 	return tokenString, nil
 }
 
-func (s *AuthService) GenerateIDToken(user *models.User, IDTokenTTL time.Duration) (string, error){
+func (s *AuthService) GenerateIDToken(user *models.User, IDTokenTTL time.Duration) (string, error) {
 
 	expirationTime := time.Now().Add(IDTokenTTL)
 	api := os.Getenv("API")
 
-	claims := jwt.MapClaims {
-		"iss": api,
-		"sub": user.ID.String(),
-		"exp": expirationTime.Unix(),
-		"iat": time.Now().Unix(),
+	claims := jwt.MapClaims{
+		"iss":      api,
+		"sub":      user.ID.String(),
+		"exp":      expirationTime.Unix(),
+		"iat":      time.Now().Unix(),
 		"username": user.Username,
 		"email":    user.Email,
-		"revoked":  false, // revoked status
 		//by status we mean that if email is verified or not
-		"status" : user.Status,
+		"status": user.Status,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -224,9 +220,9 @@ func (s *AuthService) ValidateToken(tokenString string) (jwt.MapClaims, error) {
 	return nil, ErrInvalidToken
 }
 
-func (s *AuthService) ResetPassword(email any, old_password, new_password string) error {
+func (s *AuthService) ResetPassword(userID string, old_password, new_password string) error {
 	// Get the user from the database
-	user, err := s.UserRepo.GetUserByEmail(email)
+	user, err := s.UserRepo.GetUserByID(userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrInvalidCredentials
@@ -243,7 +239,7 @@ func (s *AuthService) ResetPassword(email any, old_password, new_password string
 		return err
 	}
 
-	err = s.UserRepo.ResetPassword(email, newHashedPassword)
+	err = s.UserRepo.ResetPassword(user.ID.String(), newHashedPassword)
 	return err
 }
 
@@ -318,7 +314,7 @@ func (s *AuthService) RefreshAccessToken(refreshTokenString string) (string, err
 	}
 
 	// Get the user
-	user, err := s.UserRepo.GetUserByID(token.UserID)
+	user, err := s.UserRepo.GetUserByID(token.UserID.String())
 	if err != nil {
 		return "", err
 	}

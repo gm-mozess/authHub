@@ -44,7 +44,7 @@ func (s *MailRepository) SendEmail(email, link string) error {
 			"Subject: Email Verification\r\n" +
 			"MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\r\n" + // Exemple pour du HTML
 			"\r\n" + // Ligne vide séparant les en-têtes du corps
-			string(mail.Message) + "\r\n")
+			"<a href=" + string(mail.Message) + ">click on this to confirm your email</a>" + "\r\n")
 
 	// Configuration TLS pour StartTLS
 	// InsecureSkipVerify: true est à utiliser avec PRUDENCE en production.

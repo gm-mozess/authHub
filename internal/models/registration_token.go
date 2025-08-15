@@ -8,7 +8,6 @@ import (
 )
 
 type RegistToken struct {
-	ID        uuid.UUID
 	UserID    uuid.UUID
 	Token     string
 	ExpiresAt time.Time
@@ -24,9 +23,8 @@ func NewRegistTokenRepository(db *sql.DB) RegistTokenRepository {
 	return RegistTokenRepository{db: db}
 }
 
-func NewRegistToken(id, userID uuid.UUID, token string, expiresAt time.Time, revoked bool) RegistToken {
+func NewRegistToken(userID uuid.UUID, token string, expiresAt time.Time, revoked bool) RegistToken {
 	return RegistToken{
-		ID: id,
 		UserID: userID,
 		Token: token,
 		ExpiresAt: expiresAt,
@@ -39,20 +37,20 @@ func (r *RegistTokenRepository) InsertRegistToken(token *RegistToken) error {
 		 INSERT INTO registration_token (id, user_id, token, expires_at, revoked)
         VALUES (?, ?, ?, FROM_UNIXTIME(?), ?)
 	`
-	_, err := r.db.Exec(query, token.ID, token.UserID, token.Token, token.ExpiresAt, token.Revoked)
+	_, err := r.db.Exec(query, token.UserID, token.Token, token.ExpiresAt, token.Revoked)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (r *RegistTokenRepository) GetRegistToken(tokenString, id any) (*RegistToken, error) {
+//id row must be deleted and user id set to primary key
+func (r *RegistTokenRepository) GetRegistToken(userId string) (*RegistToken, error) {
 	query := `
-		SELECT * FROM registration_token WHERE token = ? and id = ?
+		SELECT * FROM registration_token WHERE user_id = ?
 	`
 	var token RegistToken
-	err := r.db.QueryRow(query, tokenString, id).Scan(
-		&token.ID,
+	err := r.db.QueryRow(query, userId).Scan(
 		&token.UserID,
 		&token.Token,
 		&token.ExpiresAt,
@@ -64,16 +62,16 @@ func (r *RegistTokenRepository) GetRegistToken(tokenString, id any) (*RegistToke
 	return &token, nil
 }
 
-func (r *RegistTokenRepository) RevokeRegistToken(tokenString, id string) error {
+func (r *RegistTokenRepository) RevokeRegistToken(userId string) error {
 	query := `
-		UPDATE registration_token SET revoked=true WHERE token = ? and id = ?
+		UPDATE registration_token SET revoked=true WHERE user_id = ?
 	`
-	_, err := r.db.Exec(query, tokenString, id)
+	_, err := r.db.Exec(query, userId)
 	return err
 }
 
-func (r *RegistTokenRepository) DeleteRegistTokenHistory(userID any) error {
+func (r *RegistTokenRepository) DeleteRegistTokenHistory(userId string) error {
 	query := `DELETE FROM registration_token WHERE user_id = ?`
-	_, err := r.db.Exec(query, userID)
+	_, err := r.db.Exec(query, userId)
 	return err
 }

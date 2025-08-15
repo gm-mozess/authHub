@@ -43,7 +43,7 @@ func (h *UserHandler) Profile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get user from database
-	user, err := h.userRepo.GetUserByID(userID)
+	user, err := h.userRepo.GetUserByID(userID.String())
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
